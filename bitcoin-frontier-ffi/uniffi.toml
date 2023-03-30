@@ -1,0 +1,6 @@
+[bindings.kotlin]
+package_name = "com.tb.bitcoinfrontier"
+cdylib_name = "bitcoinfrontierffi"
+
+#[bindings.swift]
+#cdylib_name = "bitcoinfrontierffi"

@@ -1,1 +1,7 @@
 .idea/
+local.properties
+target/
+.gradle/
+build/
+bitcoinfrontier.kt
+libbitcoinfrontierffi.so

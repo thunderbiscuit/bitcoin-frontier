@@ -5,3 +5,4 @@ target/
 build/
 bitcoinfrontier.kt
 libbitcoinfrontierffi.so
+.DS_Store

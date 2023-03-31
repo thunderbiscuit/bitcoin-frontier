@@ -1,0 +1,248 @@
+/*
+ * Copyright 2020-2022 thunderbiscuit and contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the ./LICENSE file.
+ */
+
+package com.tb.frontierwallet.ui.wallet
+
+import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.util.Log
+import android.widget.Toast
+import androidx.compose.material.SnackbarDuration
+import androidx.compose.material.SnackbarHostState
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
+import com.goldenraven.padawanwallet.data.tx.Tx
+import com.goldenraven.padawanwallet.data.tx.TxDao
+import com.goldenraven.padawanwallet.data.tx.TxDatabase
+import com.goldenraven.padawanwallet.data.tx.TxRepository
+import com.tb.frontierwallet.data.Wallet
+import com.tb.frontierwallet.data.WalletRepository
+import com.tb.frontierwallet.utils.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.bitcoindevkit.AddressInfo
+import org.bitcoindevkit.PartiallySignedTransaction
+
+private const val TAG = "WalletViewModel"
+
+class WalletViewModel(
+    application: Application,
+) : AndroidViewModel(application) {
+    val readAllData: LiveData<List<Tx>>
+    private val repository: TxRepository
+    var openFaucetDialog: MutableState<Boolean> = mutableStateOf(false)
+
+    private var _balance: MutableLiveData<ULong> = MutableLiveData(0u)
+    val balance: LiveData<ULong>
+        get() = _balance
+
+    private var _address: MutableLiveData<String> = MutableLiveData("No address yet")
+    val address: LiveData<String>
+        get() = _address
+
+    private val _isRefreshing: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean>
+        get() = _isRefreshing.asStateFlow()
+
+    var isOnlineVariable: MutableLiveData<Boolean> = MutableLiveData(false)
+
+    init {
+        Log.i(TAG, "The WalletScreen viewmodel is being initialized...")
+
+        val txDao: TxDao = TxDatabase.getDatabase(application).txDao()
+        repository = TxRepository(txDao)
+        readAllData = repository.readAllData
+
+        if (isOnlineVariable.value == true && !Wallet.blockchainIsInitialized()) {
+            Wallet.createBlockchain()
+        }
+
+        updateConnectivityStatus(application)
+
+        // app will sync on initialization of the viewmodel
+        viewModelScope.launch {
+            delay(8000)
+            refresh(application)
+        }
+    }
+
+    // Faucet Code
+    fun onPositiveDialogClick() {
+        // callTatooineFaucet(getLastUnusedAddress())
+        faucetCallDone()
+        openFaucetDialog.value = false
+    }
+
+    fun onNegativeDialogClick() {
+        openFaucetDialog.value = false
+    }
+
+    // private fun didWeOfferFaucet(): Boolean {
+    //     val faucetOfferDone = WalletRepository.didWeOfferFaucet()
+    //     Log.i(TAG, "We have already asked if they wanted testnet coins: $faucetOfferDone")
+    //     return faucetOfferDone
+    // }
+
+    // private fun faucetOfferWasMade() {
+    //     Log.i(TAG, "The offer to call the faucet was made")
+    //     WalletRepository.offerFaucetDone()
+    // }
+
+    private fun faucetCallDone() {
+        WalletRepository.faucetCallDone()
+    }
+
+    private fun getLastUnusedAddress(): AddressInfo {
+        val address = Wallet.getLastUnusedAddress()
+        _address.setValue(address.address)
+        return address
+    }
+
+    fun updateLastUnusedAddress() {
+        val address = Wallet.getLastUnusedAddress().address
+        _address.value = address
+    }
+
+    private suspend fun updateBalance() {
+        Wallet.sync()
+        withContext(Dispatchers.Main) {
+            _balance.value = Wallet.getBalance()
+        }
+    }
+
+    // Refreshing & Syncing
+    fun refresh(context: Context) {
+        if (isOnlineVariable.value == true) {
+            if (!Wallet.blockchainIsInitialized()) { Wallet.createBlockchain() }
+            // This doesn't handle multiple 'refreshing' tasks, don't use this
+            viewModelScope.launch(Dispatchers.IO) {
+                // A fake 2 second 'refresh'
+                // _isRefreshing.emit(true)
+                updateBalance()
+                syncTransactionHistory()
+                // delay(300)
+                // _isRefreshing.emit(false)
+            }
+        } else {
+            Toast.makeText(context, "No Internet Access!", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun syncTransactionHistory() {
+        val txHistory = Wallet.listTransactions()
+        Log.i(TAG,"Transactions history, number of transactions: ${txHistory.size}")
+
+        for (tx in txHistory) {
+            // val details = when (tx.confirmationTime) {
+            //     null -> tx.details
+            //     is BlockTime -> tx.details
+            // }
+            var valueIn = 0
+            var valueOut = 0
+            val satoshisIn = SatoshisIn(tx.received.toInt())
+            val satoshisOut = SatoshisOut(tx.sent.toInt())
+            val isPayment = isPayment(satoshisOut, satoshisIn)
+            when (isPayment) {
+                true -> {
+                    valueOut = netSendWithoutFees(
+                        txSatsOut = satoshisOut,
+                        txSatsIn = satoshisIn,
+                        fees = tx.fee?.toInt() ?: 0
+                    )
+                }
+                false -> {
+                    valueIn = tx.received.toInt()
+                }
+            }
+            val time: String = when (tx.confirmationTime) {
+                null -> "Pending"
+                else -> tx.confirmationTime?.timestamp?.timestampToString() ?: "Pending"
+            }
+            val height: UInt = when (tx.confirmationTime) {
+                null -> 100_000_000u
+                else -> tx.confirmationTime?.height ?: 100_000_000u
+            }
+            val transaction = Tx(
+                txid = tx.txid,
+                date = time,
+                valueIn = valueIn,
+                valueOut = valueOut,
+                fees = tx.fee?.toInt() ?: 0,
+                isPayment = isPayment,
+                height = height.toInt()
+            )
+            addTx(transaction)
+        }
+    }
+
+    private fun addTx(tx: Tx) {
+        viewModelScope.launch(Dispatchers.IO) {
+            Log.i(TAG, "Adding transaction to DB: $tx")
+            repository.addTx(tx)
+        }
+    }
+
+    fun updateConnectivityStatus(context: Context) {
+        Log.i(TAG, "Updating connectivity status...")
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = connectivityManager.getNetworkCapabilities(connectivityManager.activeNetwork)
+
+        val onlineStatus: Boolean = if (capabilities != null) {
+            Log.i(TAG, "updateConnectivityStatus function returned $capabilities")
+            when {
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
+                    Log.i(TAG, "Network capabilities: TRANSPORT_WIFI")
+                    true
+                }
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> {
+                    Log.i(TAG, "Network capabilities: TRANSPORT_CELLULAR")
+                    true
+                }
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> {
+                    Log.i(TAG, "Network capabilities: TRANSPORT_ETHERNET")
+                    true
+                }
+                else -> false
+            }
+        } else {
+            false
+        }
+        Log.i(TAG, "Updating online status to $onlineStatus")
+        isOnlineVariable.setValue(onlineStatus)
+    }
+
+    fun broadcastTransaction(
+        psbt: PartiallySignedTransaction,
+        snackbarHostState: SnackbarHostState,
+    ) {
+            val snackbarMsg: String = try {
+                Wallet.sign(psbt)
+                Wallet.broadcast(psbt)
+                "Transaction was broadcast successfully"
+            } catch (e: Throwable) {
+                Log.i(TAG, "Broadcast error: ${e.message}")
+                "Error: ${e.message}"
+            }
+            viewModelScope.launch {
+                snackbarHostState.showSnackbar(message = snackbarMsg, duration = SnackbarDuration.Short)
+            }
+    }
+}
+
+enum class CurrencyType {
+    SATS,
+    BTC,
+}

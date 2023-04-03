@@ -6,6 +6,9 @@ The main conduit for this goal is a library called bitcoin-frontier. We use the 
 
 The library is not available on Maven Central; if you want to use it, you'll need to build it yourself.
 
+## When will it be ready for prod?
+It won't. If you find something in bitcoin-frontier you like and think should make it into a production-ready application, you should try to find (or build) a long-term home for it! Different things belong in different layers of the Rust bitcoin ecosystem (and it's bindings), and there might be good places for them to get the proper review and maintenance such features might require.
+
 ## Frontier Wallet
 The [Frontier Wallet](./frontier-app) is a sample Android app that uses the bitcoin-frontier library. It is a fork of [Padawan Wallet](https://github.com/thunderbiscuit/padawan-wallet). I don't have time to build a brand new, fresh UI, and this is a good starting point.
 

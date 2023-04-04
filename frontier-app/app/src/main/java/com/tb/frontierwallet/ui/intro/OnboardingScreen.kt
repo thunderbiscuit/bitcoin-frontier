@@ -64,16 +64,10 @@ internal fun OnboardingScreen(
                     bottom.linkTo(body.top)
                 }
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.ic_padawan_colour_foreground),
-                contentDescription = "Padawan Logo",
-                Modifier.size(140.dp)
-            )
-            // Icon(
-            //     painter = painterResource(id = R.drawable.ic_keyring),
-            //     contentDescription = "Keyring logo",
-            //     tint = Color(0xff000000),
-            //     modifier = Modifier.size(80.dp)
+            // Image(
+            //     painter = painterResource(id = R.drawable.ic_padawan_colour_foreground),
+            //     contentDescription = "Padawan Logo",
+            //     Modifier.size(140.dp)
             // )
             Text(
                 text = "Frontier Wallet",

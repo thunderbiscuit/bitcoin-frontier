@@ -13,3 +13,7 @@ It won't. If you find something in bitcoin-frontier you like and think should ma
 The [Frontier Wallet](./frontier-app) is a sample Android app that uses the bitcoin-frontier library. It is a fork of [Padawan Wallet](https://github.com/thunderbiscuit/padawan-wallet). I don't have time to build a brand new, fresh UI, and this is a good starting point.
 
 Similar to the bitcoin-frontier library, the app is not available on the Play Store.
+
+<center>
+  <img src="./frontier-app/img/wallet.png" alt="Screenshots" style="height: 300px;">
+</center>
